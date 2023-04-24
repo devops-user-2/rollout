@@ -336,7 +336,14 @@ spec:
 
 
 
-
+replicas: 1
+image: myapp:1.0
+namespace1: app-ns1
+namespace2: app-ns2
+etcdReplicas: 3
+etcdImage: quay.io/coreos/etcd:v3.4.13
+etcdServiceName: etcd-cluster
+loadBalancerServiceName: myapp-lb
 
 
 
