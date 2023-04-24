@@ -1,0 +1,349 @@
+To deploy an application to two different namespaces in two different clusters and ensure only one instance is running using a service registry, load balancer, and etcd, you can follow these general steps:
+
+
+Create the application deployment YAML file for your application and specify the replicas as 1.
+
+Create a service YAML file to expose the application deployment to be accessible in both clusters.
+
+Create an etcd cluster deployment YAML file and make sure the replicas are set to 3 for high availability.
+
+Create a service YAML file to expose the etcd deployment.
+
+Create a LoadBalancer service YAML file with a specific selector that matches with the application service selector.
+
+Configure the LoadBalancer service to use the etcd service as a backend by setting up the LoadBalancer's endpoint with the etcd service IP address.
+
+Modify the application deployment YAML file to include an environment variable with the etcd service endpoint URL.
+
+Use a Helm chart to package and deploy your application, etcd, and LoadBalancer services in both clusters.
+
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: namespace1
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: namespace2
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-service-account
+  namespace: namespace1
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-service-account
+  namespace: namespace2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  namespace: namespace1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: app
+          image: <image-name>
+          ports:
+            - containerPort: 8080
+          env:
+            - name: REGISTRY_HOST
+              value: "etcd-service.namespace1.svc.cluster.local"
+            - name: REGISTRY_PORT
+              value: "2379"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  namespace: namespace2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: app
+          image: <image-name>
+          ports:
+            - containerPort: 8080
+          env:
+            - name: REGISTRY_HOST
+              value: "etcd-service.namespace2.svc.cluster.local"
+            - name: REGISTRY_PORT
+              value: "2379"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: namespace1
+spec:
+  selector:
+    app: app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: namespace2
+spec:
+  selector:
+    app: app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-service
+  namespace: namespace1
+spec:
+  selector:
+    app: etcd
+  ports:
+    - protocol: TCP
+      port: 2379
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-service
+  namespace: namespace2
+spec:
+  selector:
+    app: etcd
+  ports:
+    - protocol: TCP
+      port: 2379
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: etcd-statefulset
+  namespace: namespace1
+spec:
+  replicas: 1
+  serviceName: etcd-service
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      containers:
+        - name: etcd
+          image: quay.io/coreos/etcd:v3.3.12
+          command:
+          
+
+
+etcd-statefulset-namespace1.yaml for namespace1 in cluster1:
+
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: etcd
+  namespace: {{ .Values.namespace1 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: etcd
+  serviceName: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      containers:
+      - name: etcd
+        image: quay.io/coreos/etcd:v3.2.13
+        command:
+        - /usr/local/bin/etcd
+        - --name=etcd0
+        - --data-dir=/etcd-data
+        - --listen-client-urls=http://0.0.0.0:2379
+        - --advertise-client-urls=http://etcd:2379
+        ports:
+        - containerPort: 2379
+          name: client
+          protocol: TCP
+        volumeMounts:
+        - name: etcd-data
+          mountPath: /etcd-data
+      volumes:
+      - name: etcd-data
+        emptyDir: {}
+
+
+ 
+etcd-statefulset-namespace2.yaml for namespace2 in cluster2:
+
+
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: etcd
+  namespace: {{ .Values.namespace2 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: etcd
+  serviceName: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      containers:
+      - name: etcd
+        image: quay.io/coreos/etcd:v3.2.13
+        command:
+        - /usr/local/bin/etcd
+        - --name=etcd0
+        - --data-dir=/etcd-data
+        - --listen-client-urls=http://0.0.0.0:2379
+        - --advertise-client-urls=http://etcd:2379
+        ports:
+        - containerPort: 2379
+          name: client
+          protocol: TCP
+        volumeMounts:
+        - name: etcd-data
+          mountPath: /etcd-data
+      volumes:
+      - name: etcd-data
+        emptyDir: {}
+
+
+
+
+
+
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.serviceName }}-lb
+  namespace: {{ .Values.namespace1 }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+  loadBalancerIP: {{ .Values.loadBalancerIP }}
+  loadBalancerSourceRanges: {{ .Values.loadBalancerSourceRanges }}
+  {{- if .Values.useEtcdBackend }}
+  externalTrafficPolicy: Local
+  {{- end }}
+  {{- if .Values.useEtcdBackend }}
+  externalTrafficPolicy: Local
+  {{- end }}
+  {{- if .Values.useEtcdBackend }}
+  {{- if eq .Values.namespace1 .Values.namespace2 }}
+  loadBalancerAnnotations:
+    metallb.universe.tf/address-pool: {{ .Values.addressPool }}
+    metallb.universe.tf/layer2-data: |
+      {
+        "addresses": ["{{ .Values.loadBalancerIP }}"],
+        "protocols": {
+          "tcp": {
+            "{{ .Values.etcdServicePort }}": ["{{ .Values.etcdServicePort }}"]
+          }
+        }
+      }
+  {{- else }}
+  loadBalancerAnnotations:
+    metallb.universe.tf/address-pool: {{ .Values.addressPool }}
+  {{- end }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.serviceName }}-lb
+  namespace: {{ .Values.namespace2 }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+  loadBalancerIP: {{ .Values.loadBalancerIP }}
+  loadBalancerSourceRanges: {{ .Values.loadBalancerSourceRanges }}
+  {{- if .Values.useEtcdBackend }}
+  externalTrafficPolicy: Local
+  {{- end }}
+  {{- if .Values.useEtcdBackend }}
+  {{- if eq .Values.namespace1 .Values.namespace2 }}
+  loadBalancerAnnotations:
+    metallb.universe.tf/address-pool: {{ .Values.addressPool }}
+    metallb.universe.tf/layer2-data: |
+      {
+        "addresses": ["{{ .Values.loadBalancerIP }}"],
+        "protocols": {
+          "tcp": {
+            "{{ .Values.etcdServicePort }}": ["{{ .Values.etcdServicePort }}"]
+          }
+        }
+      }
+  {{- else }}
+  loadBalancerAnnotations:
+    metallb.universe.tf/address-pool: {{ .Values.addressPool }}
+  {{- end }}
+  {{- end }}
+
+
+
+
+
+
+
+In the spec section, the selector field specifies the labels that the service should match with. The type field specifies that the service is of type LoadBalancer. The ports field specifies the port mappings for the service.
+
+The loadBalancerIP field specifies the IP address of the load balancer service. The loadBalancerSourceRanges field specifies the source IP ranges that are allowed to access the service.
+
+The externalTrafficPolicy field specifies that the load balancer should use the source IP of the request as the client IP, and the status field specifies the IP address of the load balancer.
+
+Finally, the endpoints field specifies the IP address and port of the etcd service that the load balancer should use as a backend.
