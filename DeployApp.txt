@@ -1,3 +1,14 @@
+Both singleton out of application and singleton in application locking refer to techniques used to ensure that only one instance of an application or a specific task is running at any given time.
+
+Singleton out of application locking is achieved by using an external tool, such as a database, a message broker, or a service registry like etcd, to store and manage the locking state. In this approach, multiple instances of the application can compete for the lock, and the one that acquires the lock will be the only one allowed to run the task. This technique is often used in distributed systems where multiple instances of the same application may be running in different nodes or clusters.
+
+Singleton in application locking is achieved by using an internal locking mechanism within the application itself. In this approach, the application code includes logic to manage the locking state, and only one instance of the application can acquire the lock and run the task. This technique is often used in single-node applications or in environments where external resources like a service registry are not available or not desirable.
+
+The choice between these techniques depends on the specific requirements and constraints of the application and the environment where it will be running. Singleton out of application locking may provide better scalability and fault tolerance in distributed systems, but it may also introduce additional complexity and dependencies. Singleton in application locking may be simpler and more lightweight, but it may not be suitable for applications that need to run in multiple nodes or clusters.
+
+
+
+
 To deploy an application to two different namespaces in two different clusters and ensure only one instance is running using a service registry, load balancer, and etcd, you can follow these general steps:
 
 
