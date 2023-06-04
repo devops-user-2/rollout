@@ -1,0 +1,159 @@
+# values.yaml
+namespace1: "your-namespace1"
+namespace2: "your-namespace2"
+appName: "your-app"
+etcdEndpoint: "http://etcd-cluster.default.svc.cluster.local:2379"
+etcdUsername: ""
+etcdPassword: ""
+replicaCount: 1
+
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.appName }}
+  namespace: {{ .Values.namespace1 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}
+    spec:
+      initContainers:
+        - name: acquire-lock
+          image: your-lock-container:latest
+          env:
+            - name: ETCD_ENDPOINT
+              value: {{ .Values.etcdEndpoint }}
+            - name: ETCD_USERNAME
+              value: {{ .Values.etcdUsername }}
+            - name: ETCD_PASSWORD
+              value: {{ .Values.etcdPassword }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Acquire the lock
+              # Add your lock acquisition logic here
+              while true; do
+                lock_acquired=$(etcdctl --endpoints=${ETCD_ENDPOINT} get lock --create-lock-node)
+                if [ "$lock_acquired" == "LOCK_ACQUIRED" ]; then
+                  break
+                else
+                  sleep 1
+                fi
+              done
+      containers:
+        - name: app
+          image: your-app-container:latest
+          env:
+            - name: ETCD_ENDPOINT
+              value: {{ .Values.etcdEndpoint }}
+            - name: ETCD_USERNAME
+              value: {{ .Values.etcdUsername }}
+            - name: ETCD_PASSWORD
+              value: {{ .Values.etcdPassword }}
+          # Your container configuration here
+
+# service.yaml (for namespace1)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}
+  namespace: {{ .Values.namespace1 }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+
+# service.yaml (for namespace2)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}
+  namespace: {{ .Values.namespace2 }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+
+# etcd-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd-cluster
+  namespace: {{ .Values.namespace1 }}
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      containers:
+        - name: etcd
+          image: your-etcd-container:latest
+          # Your etcd container configuration here
+
+# etcd-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-cluster
+  namespace: {{ .Values.namespace1 }}
+spec:
+  selector:
+    app: etcd
+  ports:
+    - name: client
+      port: 2379
+      targetPort: 2379
+    - name: peer
+      port: 2380
+      targetPort: 2380
+
+# LoadBalancer service YAML (for namespace1)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}-lb
+  namespace: {{ .Values.namespace1 }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+  loadBalancerSourceRanges: [ "0.0.0.0/0" ]
+
+# LoadBalancer service YAML (for namespace2)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}-lb
+  namespace: {{ .Values.namespace2 }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+  loadBalancerSourceRanges: [ "0.0.0.0/0" ]
