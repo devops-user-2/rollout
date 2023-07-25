@@ -1,0 +1,94 @@
+import argparse
+import etcd3
+import time
+import sys
+
+def acquire_lock(lock_name):
+    try:
+        # Connect to the etcd server
+        etcd_client = etcd3.client(host='127.0.0.1', port=2379)
+
+        # Try to acquire the lock
+        lock = etcd_client.lock(lock_name)
+        with lock:
+            print("Lock acquired successfully.")
+            return True
+
+    except etcd3.exceptions.ConnectionFailedError:
+        print("Error: Unable to connect to the etcd server.", file=sys.stderr)
+    except etcd3.exceptions.LockFailedError:
+        print(f"Error: Lock '{lock_name}' is already held by another process.", file=sys.stderr)
+
+    # Lock acquisition failed
+    return False
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Acquire etcd lock")
+    parser.add_argument("lock_name", help="Name of the lock to acquire")
+    args = parser.parse_args()
+
+    # Acquire the lock with retries
+    while True:
+        lock_acquired = acquire_lock(args.lock_name)
+
+        # If the lock is acquired, break out of the loop
+        if lock_acquired:
+            break
+
+        print("Retrying in 5 minutes...")
+        time.sleep(300)
+
+    # Output the result to be read by the initContainer
+    if lock_acquired:
+        print("LOCK_ACQUIRED=True")
+    else:
+        print("LOCK_ACQUIRED=False")
+
+
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: your-statefulset
+spec:
+  selector:
+    matchLabels:
+      app: your-app
+  serviceName: "your-service-name"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: your-app
+      annotations:
+        lock-acquired: "false"  # Initialize the lock-acquired variable as false
+    spec:
+      initContainers:
+        - name: acquire-lock
+          image: your-docker-image-with-python3-and-etcd3:latest
+          command: ["sh", "-c", "while true; do python acquire_lock.py your-lock-name && break || sleep 300; done"]
+          env:
+            - name: LOCK_ACQUIRED
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['lock-acquired']
+          volumeMounts:
+            - name: lock-info
+              mountPath: /lock-info
+      containers:
+        - name: main-container
+          image: your-main-docker-image:latest
+          env:
+            - name: LOCK_ACQUIRED
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['lock-acquired']
+          args: ["your-main-container-command"]
+          # Add other specifications for your main container here
+          volumeMounts:
+            - name: lock-info
+              mountPath: /lock-info
+      volumes:
+        - name: lock-info
+          emptyDir: {}
+
