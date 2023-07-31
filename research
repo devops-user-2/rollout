@@ -92,3 +92,16 @@ spec:
         - name: lock-info
           emptyDir: {}
 
+
+
+readinessProbe:
+  exec:
+    command:
+      - "/bin/bash"
+      - "-c"
+      - "sleep 300"  # Replace 300 with the desired delay in seconds
+  initialDelaySeconds: 300  # Adjust this value to match the readinessProbe sleep period
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
